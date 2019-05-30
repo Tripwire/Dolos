@@ -33,7 +33,7 @@ Usage
 ====
 It is recommended to run the Dolos console from within a screen session.
 ```
-python3 DolosService.py
+python3 dolos.py
 ```
 
 The easiest way to get started using Dolos is through the GUI.
